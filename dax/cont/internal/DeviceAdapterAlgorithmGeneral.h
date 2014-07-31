@@ -448,7 +448,110 @@ public:
   //--------------------------------------------------------------------------
   // Sort
 private:
-  template<typename PortalType, typename CompareType>
+
+  // Returns the number of items of the portal in the given range that are
+  // less than the given value.
+  template<typename T, typename PortalType, typename CompareType>
+  DAX_EXEC_EXPORT
+  dax::Id MergeSortBinarySearch(const PortalType &portal,
+                              CompareType &compare,
+                              dax::Id rangeStart,
+                              dax::Id rangeLength,
+                              T value,
+                              bool tieBreaker)
+  {
+    dax::Id left = rangeStart;
+    dax::Id right = left+rangeLength;
+
+    while (left < right)
+      {
+      dax::Id middle = (left+right)/2;
+      T middleValue = portal.Get(middle);
+      if (compare(middleValue, value)
+          || (tieBreaker && (middleValue == value)))
+        {
+        left = middle+1;
+        }
+      else
+        {
+        right = middle;
+        }
+      }
+    return left - rangeStart;
+  }
+
+  template<typename InputPortalType, typename OutputPortalType, typename CompareType>
+  struct ParallelMergeSortKernel : public dax::exec::internal::WorkletBase
+  {
+    InputPortalType InputPortal;
+    OutputPortalType OutputPortal;
+    CompareType Compare;
+    dax::Id InGroupSize;
+    dax::Id OutGroupSize;
+
+    DAX_CONT_EXPORT
+    ParallelMergeSortKernel(InputPortalType input,
+                       OutputPortalType output,
+                       CompareType &compare,
+                       dax::Id outGroupSize)
+      : InputPortal(input), OutputPortal(output), Compare(compare),
+        InGroupSize(outGroupSize/2), OutGroupSize(outGroupSize) { }
+
+    DAX_EXEC_EXPORT
+    void operator()(dax::Id index) const
+    {
+      const dax::Id outputIdxOffset = index%this->OutGroupSize;
+      const dax::Id outputBeginIdx= index - outputIdxOffset;
+      const dax::Id numVals = this->InputPortal.GetNumberOfValues();
+
+      const dax::Id input1BeginIdx = outputBeginIdx;
+      //Not const becuase this value changes for arrays whose size is not a power of two
+            dax::Id input2BeginIdx = input1BeginIdx + this->InGroupSize;
+
+      //Check if the calculated index of the 2nd input array is out of bounds
+      //(This happens for arrays whose size are not a power of two
+      if(input2BeginIdx >= numVals)
+          input2BeginIdx = numVals-1;
+
+      bool tieBreaker;
+      dax::Id localIndex;   // Index of value in containing input range
+      dax::Id compareRangeStart;
+      dax::Id compareRangeLength = this->InGroupSize;
+      if (index < input2BeginIdx)
+      {
+        // Index in the first input range.
+        tieBreaker = true; // Place this value before any identicals in range 2.
+        localIndex = index - input1BeginIdx;
+        compareRangeStart = input2BeginIdx;
+      }
+      else
+      {
+        // Index in the second input range.
+        tieBreaker = false; // Place this value after any identicals in range 2.
+        localIndex = index - input2BeginIdx;
+        compareRangeStart = input1BeginIdx;
+      }
+
+      typename InputPortalType::ValueType value = this->InputPortal.Get(index);
+
+      //Check if the calucated compare indices are out of bounds
+      //(This happens for array whose size are not a power of two
+      if((compareRangeStart + compareRangeLength) > numVals)
+          compareRangeLength = numVals-compareRangeStart;
+
+      const dax::Id compareIndex = SortMergeSearchFind(this->InputPortal,
+                                                       Compare,
+                                                       compareRangeStart,
+                                                       compareRangeLength,
+                                                       value,
+                                                       tieBreaker
+                                                       );
+
+      this->OutputPortal.Set(outputBeginIdx + localIndex + compareIndex, value);
+    }
+  };
+
+  /*template<typename PortalType, typename CompareType>
   struct BitonicSortMergeKernel : dax::exec::internal::WorkletBase
   {
     PortalType Portal;
@@ -520,7 +623,7 @@ private:
           }
         }
     }
-  };
+  };*/
 
   struct DefaultCompareFunctor
   {
@@ -533,28 +636,40 @@ private:
     }
   };
 
+
 public:
   template<typename T, class Container, class CompareType>
   DAX_CONT_EXPORT static void Sort(
       dax::cont::ArrayHandle<T,Container,DeviceAdapterTag> &values,
-      CompareType compare)
+      CompareType &compare)
   {
-    typedef typename dax::cont::ArrayHandle<T,Container,DeviceAdapterTag>
-        ArrayType;
-    typedef typename ArrayType::PortalExecution PortalType;
+    typedef dax::cont::ArrayHandle<T,Container,DeviceAdapterTag> ArrayHandleType;
+    typedef typename ArrayHandleType::PortalConstExecution InputPortalType;
+    typedef typename ArrayHandleType::PortalExecution OutputPortalType;
 
     dax::Id numValues = values.GetNumberOfValues();
     if (numValues < 2) { return; }
 
-    PortalType portal = values.PrepareForInPlace();
+    ArrayHandleType outputArray;
 
-    dax::Id numThreads = 1;
-    while (numThreads < numValues) { numThreads *= 2; }
-    numThreads /= 2;
+    typedef ParallelMergeSortKernel<InputPortalType, OutputPortalType, CompareType> MergeSort;
+    //typedef BitonicSortMergeKernel<PortalType,CompareType> MergeKernel;
+    //typedef BitonicSortCrossoverKernel<PortalType,CompareType> CrossoverKernel;
 
-    typedef BitonicSortMergeKernel<PortalType,CompareType> MergeKernel;
-    typedef BitonicSortCrossoverKernel<PortalType,CompareType> CrossoverKernel;
-
+    //NOTE: You have to loop of the number of values times 2 becuase
+    //non power of two sized arrays require an extra iteration in order
+    //to merge into one final output array
+    for (dax::Id size = 2; size <= numValues*2; size *= 2)
+    {
+        DerivedAlgorithm::Schedule(MergeSort(values.PrepareForInput(),
+                                             outputArray.PrepareForOutput(numValues),
+                                             compare,
+                                             size),
+                            numValues);
+        std::swap(values, outputArray);
+    }
+    //return inputArray;
+    /*
     for (dax::Id crossoverSize = 1;
          crossoverSize < numValues;
          crossoverSize *= 2)
@@ -566,7 +681,7 @@ public:
         DerivedAlgorithm::Schedule(MergeKernel(portal,compare,mergeSize),
                                    numThreads);
         }
-      }
+      }*/
   }
 
   template<typename T, class Container>
