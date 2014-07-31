@@ -453,8 +453,8 @@ private:
   // less than the given value.
   template<typename T, typename PortalType, typename CompareType>
   DAX_EXEC_EXPORT
-  dax::Id MergeSortBinarySearch(const PortalType &portal,
-                              CompareType &compare,
+  dax::Id static MergeSortBinarySearch(const PortalType &portal,
+                              const CompareType &compare,
                               dax::Id rangeStart,
                               dax::Id rangeLength,
                               T value,
@@ -481,7 +481,7 @@ private:
   }
 
   template<typename InputPortalType, typename OutputPortalType, typename CompareType>
-  struct ParallelMergeSortKernel : public dax::exec::internal::WorkletBase
+  struct ParallelMergeSortKernel : dax::exec::internal::WorkletBase
   {
     InputPortalType InputPortal;
     OutputPortalType OutputPortal;
@@ -490,9 +490,9 @@ private:
     dax::Id OutGroupSize;
 
     DAX_CONT_EXPORT
-    ParallelMergeSortKernel(InputPortalType input,
+    ParallelMergeSortKernel(const InputPortalType &input,
                        OutputPortalType output,
-                       CompareType &compare,
+                       const CompareType &compare,
                        dax::Id outGroupSize)
       : InputPortal(input), OutputPortal(output), Compare(compare),
         InGroupSize(outGroupSize/2), OutGroupSize(outGroupSize) { }
@@ -539,8 +539,8 @@ private:
       if((compareRangeStart + compareRangeLength) > numVals)
           compareRangeLength = numVals-compareRangeStart;
 
-      const dax::Id compareIndex = SortMergeSearchFind(this->InputPortal,
-                                                       Compare,
+      const dax::Id compareIndex = MergeSortBinarySearch(this->InputPortal,
+                                                       this->Compare,
                                                        compareRangeStart,
                                                        compareRangeLength,
                                                        value,
@@ -550,80 +550,6 @@ private:
       this->OutputPortal.Set(outputBeginIdx + localIndex + compareIndex, value);
     }
   };
-
-  /*template<typename PortalType, typename CompareType>
-  struct BitonicSortMergeKernel : dax::exec::internal::WorkletBase
-  {
-    PortalType Portal;
-    CompareType Compare;
-    dax::Id GroupSize;
-
-    DAX_CONT_EXPORT
-    BitonicSortMergeKernel(const PortalType &portal,
-                           const CompareType &compare,
-                           dax::Id groupSize)
-      : Portal(portal), Compare(compare), GroupSize(groupSize) {  }
-
-    DAX_EXEC_EXPORT
-    void operator()(dax::Id index) const {
-      typedef typename PortalType::ValueType ValueType;
-
-      dax::Id groupIndex = index%this->GroupSize;
-      dax::Id blockSize = 2*this->GroupSize;
-      dax::Id blockIndex = index/this->GroupSize;
-
-      dax::Id lowIndex = blockIndex * blockSize + groupIndex;
-      dax::Id highIndex = lowIndex + this->GroupSize;
-
-      if (highIndex < this->Portal.GetNumberOfValues())
-        {
-        ValueType lowValue = this->Portal.Get(lowIndex);
-        ValueType highValue = this->Portal.Get(highIndex);
-        if (this->Compare(highValue, lowValue))
-          {
-          this->Portal.Set(highIndex, lowValue);
-          this->Portal.Set(lowIndex, highValue);
-          }
-        }
-    }
-  };
-
-  template<typename PortalType, typename CompareType>
-  struct BitonicSortCrossoverKernel : dax::exec::internal::WorkletBase
-  {
-    PortalType Portal;
-    CompareType Compare;
-    dax::Id GroupSize;
-
-    DAX_CONT_EXPORT
-    BitonicSortCrossoverKernel(const PortalType &portal,
-                               const CompareType &compare,
-                               dax::Id groupSize)
-      : Portal(portal), Compare(compare), GroupSize(groupSize) {  }
-
-    DAX_EXEC_EXPORT
-    void operator()(dax::Id index) const {
-      typedef typename PortalType::ValueType ValueType;
-
-      dax::Id groupIndex = index%this->GroupSize;
-      dax::Id blockSize = 2*this->GroupSize;
-      dax::Id blockIndex = index/this->GroupSize;
-
-      dax::Id lowIndex = blockIndex*blockSize + groupIndex;
-      dax::Id highIndex = blockIndex*blockSize + (blockSize - groupIndex - 1);
-
-      if (highIndex < this->Portal.GetNumberOfValues())
-        {
-        ValueType lowValue = this->Portal.Get(lowIndex);
-        ValueType highValue = this->Portal.Get(highIndex);
-        if (this->Compare(highValue, lowValue))
-          {
-          this->Portal.Set(highIndex, lowValue);
-          this->Portal.Set(lowIndex, highValue);
-          }
-        }
-    }
-  };*/
 
   struct DefaultCompareFunctor
   {
@@ -641,7 +567,7 @@ public:
   template<typename T, class Container, class CompareType>
   DAX_CONT_EXPORT static void Sort(
       dax::cont::ArrayHandle<T,Container,DeviceAdapterTag> &values,
-      CompareType &compare)
+      CompareType compare)
   {
     typedef dax::cont::ArrayHandle<T,Container,DeviceAdapterTag> ArrayHandleType;
     typedef typename ArrayHandleType::PortalConstExecution InputPortalType;
@@ -653,8 +579,6 @@ public:
     ArrayHandleType outputArray;
 
     typedef ParallelMergeSortKernel<InputPortalType, OutputPortalType, CompareType> MergeSort;
-    //typedef BitonicSortMergeKernel<PortalType,CompareType> MergeKernel;
-    //typedef BitonicSortCrossoverKernel<PortalType,CompareType> CrossoverKernel;
 
     //NOTE: You have to loop of the number of values times 2 becuase
     //non power of two sized arrays require an extra iteration in order
@@ -669,19 +593,6 @@ public:
         std::swap(values, outputArray);
     }
     //return inputArray;
-    /*
-    for (dax::Id crossoverSize = 1;
-         crossoverSize < numValues;
-         crossoverSize *= 2)
-      {
-      DerivedAlgorithm::Schedule(CrossoverKernel(portal,compare,crossoverSize),
-                                 numThreads);
-      for (dax::Id mergeSize = crossoverSize/2; mergeSize > 0; mergeSize /= 2)
-        {
-        DerivedAlgorithm::Schedule(MergeKernel(portal,compare,mergeSize),
-                                   numThreads);
-        }
-      }*/
   }
 
   template<typename T, class Container>
