@@ -562,14 +562,13 @@ private:
     }
   };
 
-
 public:
   template<typename T, class Container, class CompareType>
   DAX_CONT_EXPORT static void Sort(
       dax::cont::ArrayHandle<T,Container,DeviceAdapterTag> &values,
       CompareType compare)
   {
-    typedef dax::cont::ArrayHandle<T,Container,DeviceAdapterTag> ArrayHandleType;
+    typedef typename dax::cont::ArrayHandle<T,Container,DeviceAdapterTag> ArrayHandleType;
     typedef typename ArrayHandleType::PortalConstExecution InputPortalType;
     typedef typename ArrayHandleType::PortalExecution OutputPortalType;
 
@@ -580,7 +579,7 @@ public:
 
     typedef ParallelMergeSortKernel<InputPortalType, OutputPortalType, CompareType> MergeSort;
 
-    //NOTE: You have to loop of the number of values times 2 becuase
+    //NOTE: You have to loop over the number of values times 2 becuase
     //non power of two sized arrays require an extra iteration in order
     //to merge into one final output array
     for (dax::Id size = 2; size <= numValues*2; size *= 2)
