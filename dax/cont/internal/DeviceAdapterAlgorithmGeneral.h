@@ -468,7 +468,7 @@ private:
       dax::Id middle = (left+right)/2;
       T middleValue = portal.Get(middle);
       if (compare(middleValue, value)
-          || (tieBreaker && (middleValue == value)))
+          || (tieBreaker && !compare(value,middleValue))) //similiar to equivalence
         {
         left = middle+1;
         }
@@ -569,29 +569,51 @@ public:
       CompareType compare)
   {
     typedef typename dax::cont::ArrayHandle<T,Container,DeviceAdapterTag> ArrayHandleType;
-    typedef typename ArrayHandleType::PortalConstExecution InputPortalType;
-    typedef typename ArrayHandleType::PortalExecution OutputPortalType;
+    typedef typename ArrayHandleType::PortalConstExecution ValuesInputPortalType;
+    typedef typename ArrayHandleType::PortalExecution ValuesOutputPortalType;
+
+    typedef typename dax::cont::ArrayHandle<T,dax::cont::ArrayContainerControlTagBasic,DeviceAdapterTag>
+        TmpArrayHandleType;
+    typedef typename TmpArrayHandleType::PortalConstExecution TmpInputPortalType;
+    typedef typename TmpArrayHandleType::PortalExecution TmpOutputPortalType;
 
     dax::Id numValues = values.GetNumberOfValues();
     if (numValues < 2) { return; }
 
-    ArrayHandleType outputArray;
+    TmpArrayHandleType tmpArray;
 
-    typedef ParallelMergeSortKernel<InputPortalType, OutputPortalType, CompareType> MergeSort;
 
     //NOTE: You have to loop over the number of values times 2 becuase
     //non power of two sized arrays require an extra iteration in order
     //to merge into one final output array
+    bool dataInTmpArray = false;
     for (dax::Id size = 2; size <= numValues*2; size *= 2)
-    {
-        DerivedAlgorithm::Schedule(MergeSort(values.PrepareForInput(),
-                                             outputArray.PrepareForOutput(numValues),
-                                             compare,
-                                             size),
-                            numValues);
-        std::swap(values, outputArray);
-    }
-    //return inputArray;
+      {
+        if (dataInTmpArray)
+          {
+          typedef ParallelMergeSortKernel<TmpInputPortalType, ValuesOutputPortalType, CompareType> MergeSort;
+          DerivedAlgorithm::Schedule(MergeSort(tmpArray.PrepareForInput(),
+                                               values.PrepareForOutput(numValues),
+                                               compare,
+                                               size),
+                                     numValues);
+          dataInTmpArray = false;
+          }
+        else
+          {
+          typedef ParallelMergeSortKernel<ValuesInputPortalType, TmpOutputPortalType, CompareType> MergeSort;
+          DerivedAlgorithm::Schedule(MergeSort(values.PrepareForInput(),
+                                               tmpArray.PrepareForOutput(numValues),
+                                               compare,
+                                               size),
+                                     numValues);
+          dataInTmpArray = true;
+          }
+      }
+    if (dataInTmpArray)
+      {
+      DerivedAlgorithm::Copy(tmpArray, values);
+      }
   }
 
   template<typename T, class Container>

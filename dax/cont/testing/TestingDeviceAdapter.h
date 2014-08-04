@@ -769,7 +769,7 @@ private:
     dax::Id testKeys[ARRAY_SIZE];
     dax::Vector3 testValues[ARRAY_SIZE];
 
-    dax::Vector3 grad(1.0,1.0,1.0);
+    //dax::Vector3 grad(1.0,1.0,1.0);
     for(dax::Id i=0; i < ARRAY_SIZE; ++i)
       {
       testKeys[i] = ARRAY_SIZE - i;
