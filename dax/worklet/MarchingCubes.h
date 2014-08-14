@@ -128,7 +128,7 @@ private:
   {
     using dax::worklet::internal::marchingcubes::TriTable;
     // These should probably be available through the voxel class
-    const unsigned char voxelVertEdges[12][2] ={
+    const unsigned char cellVertEdges[12][2] ={
         {0,1}, {1,2}, {3,2}, {0,3},
         {4,5}, {5,6}, {7,6}, {4,7},
         {0,4}, {1,5}, {2,6}, {3,7},
@@ -143,8 +143,18 @@ private:
          ++outVertIndex)
       {
       const unsigned char edge = TriTable[voxelClass][(inputCellVisitIndex*3)+outVertIndex];
-      const int vertA = voxelVertEdges[edge][0];
-      const int vertB = voxelVertEdges[edge][1];
+      int vertA;
+      int vertB;
+      if (verts[cellVertEdges[edge][0]] < verts[cellVertEdges[edge][1]])
+        {
+        vertA = cellVertEdges[edge][0];
+        vertB = cellVertEdges[edge][1];
+        }
+      else
+        {
+        vertA = cellVertEdges[edge][1];
+        vertB = cellVertEdges[edge][0];
+        }
 
       // Find the weight for linear interpolation
       const dax::Scalar weight = (IsoValue - values[vertA]) /

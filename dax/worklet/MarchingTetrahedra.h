@@ -123,7 +123,7 @@ private:
   {
     using dax::worklet::internal::marchingtetrahedra::TriTable;
     // These should probably be available through the voxel class
-    const unsigned char voxelVertEdges[6][2] ={
+    const unsigned char cellVertEdges[6][2] ={
         {0,1}, {1,2}, {2,0},
         {3,0}, {3,1}, {3,2}
       };
@@ -136,11 +136,19 @@ private:
          outVertIndex < outCell.NUM_VERTICES;
          ++outVertIndex)
       {
-        //TODO: Fix rhia (inputCellVisitIndex*3) because this was copied directly
-        //from marching cubes, and I'm sure it doesn't work for tetrahedra
       const unsigned char edge = TriTable[voxelClass][(inputCellVisitIndex*3)+outVertIndex];
-      const int vertA = voxelVertEdges[edge][0];
-      const int vertB = voxelVertEdges[edge][1];
+      int vertA;
+      int vertB;
+      if (verts[cellVertEdges[edge][0]] < verts[cellVertEdges[edge][1]])
+        {
+        vertA = cellVertEdges[edge][0];
+        vertB = cellVertEdges[edge][1];
+        }
+      else
+        {
+        vertA = cellVertEdges[edge][1];
+        vertB = cellVertEdges[edge][0];
+        }
 
       // Find the weight for linear interpolation
       const dax::Scalar weight = (IsoValue - values[vertA]) /
