@@ -55,10 +55,10 @@ public:
   DAX_CONT_EXPORT MarchingTetrahedraCount(dax::Scalar isoValue)
       : IsoValue(isoValue) {  }
 
-  template<class CellTag>
+  template<typename T, class CellTag>
   DAX_EXEC_EXPORT
   dax::Id operator()(
-          const dax::exec::CellField<dax::Scalar, CellTag> &values) const
+          const dax::exec::CellField<T, CellTag> &values) const
   {
       // If you get a compile error on the following line, it means that this
       // worklet was used with an improper cell type.  Check the cell type for the
@@ -70,9 +70,9 @@ public:
 private:
   dax::Scalar IsoValue;
 
-  template<class CellTag>
+  template<typename T, class CellTag>
   DAX_EXEC_EXPORT
-  dax::Id GetNumFaces(const dax::exec::CellField<dax::Scalar,CellTag> &values,
+  dax::Id GetNumFaces(const dax::exec::CellField<T,CellTag> &values,
                       dax::CellTagTetrahedron) const
   {
     const int voxelClass =
